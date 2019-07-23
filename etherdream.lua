@@ -35,6 +35,56 @@ dissector_date = "2019-07-18"
 
 local BCAST_PORT = 7654
 local STREAM_PORT = 7765
+
+etherdream_cmdText = {
+  {0x70, 0x70, "Prepare Stream"    },
+  {0x62, 0x62, "Begin Playback"    },
+  {0x64, 0x64, "Write Data"    },
+  {0x71, 0x71, "Queue Rate Change" },
+  {0x73, 0x73, "Stop"              },
+  {0x76, 0x76, "Version Request"   },
+  {0x3f, 0x3f,  "Ping"             },
+  {0x00, 0x00,  "E-Stop"           },
+  {0xff, 0xff,  "E-Stop"           },
+}
+
+etherdream_responseText = {
+  {0x61, 0x61, "ACKnowledge"    },
+  {0x46, 0x46, "NAK - Full"    },
+  {0x49, 0x49, "NAK - Invalid" },
+  {0x21, 0x21, "NAK - Stop"          },
+}
+
+etherdream_lightEngineStateText = {
+  {0x00, 0x00, "Ready"},
+  {0x01, 0x01, "Warmup"},
+  {0x02, 0x02, "Cooldown"},
+  {0x03, 0x03, "Emergency Stop"},
+  {0x04, 0xff, "UNDEFINED"},
+}
+
+etherdream_lightEngineFlags = {
+  [0] = "E-Stop due to packet or invalid command",
+  [1] = "E-Stop due to local input",
+  [2] = "Local E-Stop is currently Active",
+  [3] = "E-Stop Overtemp",
+  [4] = "Overtemp is active",
+  [5] = "E-Stop due to link loss",
+}
+
+etherdream_playbackStateText = { 
+  {0x00, 0x00, "Idle"},
+  {0x01, 0x01, "Prepared"},
+  {0x02, 0x02, "Playing"},
+  {0x03, 0xff, "UNDEFINED"},
+}
+
+etherdream_sourceText = { 
+  {0x00, 0x00, "Network"},
+  {0x01, 0x01, "SD Card"},
+  {0x02, 0x02, "Internal Abstract"},
+  {0x03, 0xff, "UNDEFINED"},
+}
  
 local hwRev_field          = ProtoField.uint16(   "etherdream.broadcast.hw_version",     "HW Version", base.DEC)
 local swRev_field          = ProtoField.uint16(   "etherdream.broadcast.sw_version",     "SW Version",        base.DEC)
@@ -42,19 +92,22 @@ local bufferCapacity_field = ProtoField.uint16(   "etherdream.broadcast.buffer_c
 local maxPointRate_field   = ProtoField.uint16(   "etherdream.broadcast.max_point_rate", "Max Point Rate",     base.DEC)
 
 local dac_protocol_field        = ProtoField.uint8(    "etherdream.dac_status.protocol",        "DAC Protocol",           base.DEC)
-local dac_le_state_field        = ProtoField.uint8(    "etherdream.dac_status.le_state",        "DAC Light Engine State", base.DEC)
-local dac_playbackstate_field   = ProtoField.uint8(    "etherdream.dac_status.playback_sate",   "DAC Playback State",     base.DEC)
-local dac_source_field          = ProtoField.uint8(    "etherdream.dac_status.source",          "DAC Source",             base.DEC)
-local dac_le_flags_field        = ProtoField.uint16(   "etherdream.dac_status.le_flags",        "DAC Light Engine Flags", base.DEC)
+local dac_le_state_field        = ProtoField.uint8(    "etherdream.dac_status.le_state",        "DAC Light Engine State", base.RANGE_STRING, etherdream_lightEngineStateText)
+local dac_playbackstate_field   = ProtoField.uint8(    "etherdream.dac_status.playback_sate",   "DAC Playback State",     base.RANGE_STRING, etherdream_playbackStateText)
+local dac_source_field          = ProtoField.uint8(    "etherdream.dac_status.source",          "DAC Source",             base.RANGE_STRING, etherdream_sourceText)
+local dac_le_flags_field        = ProtoField.uint16(   "etherdream.dac_status.le_flags",        "DAC Light Engine Flags", base.DEC, etherdream_lightEngineFlags, 0xffff)
 local dac_playback_flags_field  = ProtoField.uint16(   "etherdream.dac_status.playback_flags",  "DAC Playback Flags",     base.DEC)
 local dac_source_flags_field    = ProtoField.uint16(   "etherdream.dac_status.source_flags",    "DAC Source Flags",       base.DEC)
 local dac_buffer_fullness_field = ProtoField.uint16(   "etherdream.dac_status.buffer_fullness", "DAC Buffer Fullness",    base.DEC)
 local dac_pointrate_field       = ProtoField.uint32(   "etherdream.dac_status.pointrate", 	    "DAC Pointrate",          base.DEC)
 local dac_pointcount_field      = ProtoField.uint32(   "etherdream.dac_status.pointcount", 	    "DAC Point Count",        base.DEC)
-
-local command_field				= ProtoField.string( "etherdream.command", "Command", base.ASCII)
+local dac_versionString_field   = ProtoField.string(   "etherdream.dac_status.version_string",  "DAC Version String",     base.ASCII)
+local command_field				= ProtoField.uint8(    "etherdream.command",                    "Command",                base.RANGE_STRING, etherdream_cmdText)
+local response_field     		= ProtoField.uint8(    "etherdream.response",                   "DAC Response",           base.RANGE_STRING, etherdream_responseText)
 
 local data_nPoints				= ProtoField.uint16( "etherdream.data.npoints", "Num Points", base.DEC)
+
+
 
 etherdream_proto.fields = {
     hwRev_field,
@@ -73,7 +126,10 @@ etherdream_proto.fields = {
 	dac_pointrate_field      ,
 	dac_pointcount_field     ,
 
+	dac_versionString_field,
+
 	command_field,
+	response_field,
 	
 	data_nPoints,
 }
@@ -116,7 +172,12 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		
 		local command = buffer(0,1):string()
 		
-		if (command == 'p') then
+		subtree:add(command_field, buffer(0,1))
+		
+		if(buffer(0,1):uint()==0xff) then
+			subtree:append_text(   " (E-Stop)")
+			pinfo.cols.info:append(" (E-Stop)")
+		elseif (command == 'p') then
 			subtree:append_text(   " (Prepare Stream)")
 			pinfo.cols.info:append(" (Prepare Stream)")
 		elseif (command == 'b') then
@@ -132,6 +193,9 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		elseif (command == 's') then
 			subtree:append_text(   " (Stop)")
 			pinfo.cols.info:append(" (Stop)")
+		elseif (command == 'v') then
+			subtree:append_text(   " (Version Request)")
+			pinfo.cols.info:append(" (Version Request)")
 		elseif (command == 'c') then
 			subtree:append_text(   " (Clear E-Stop)")
 			pinfo.cols.info:append(" (Clear E-Stop)")
@@ -149,24 +213,33 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		
 		local dac_response = buffer(0,1):string()
 		
-		if(dac_response == 'a') then
-			subtree:append_text(" (ACK)")
-			pinfo.cols.info:append(" (ACK)")
-		elseif(dac_response == 'F') then
-			subtree:append_text(" (NAK: Insufficient Buffer Space)")
-			pinfo.cols.info:append(" (NAK: Insufficient Buffer Space)"	)		
-		elseif(dac_response == 'I') then
-			subtree:append_text(" (NAK: Invalid)")
-			pinfo.cols.info:append(" (NAK: Invalid)")
-		elseif(dac_response == '!') then
-			subtree:append_text(" (NAK: Emergency Stop Active)")
-			pinfo.cols.info:append(" (NAK: Emergency Stop Active)")
-		else 
-			subtree:append_text(" DISSECTOR ERROR: Unknown response code!")
-			pinfo.cols.info:append(" DISSECTOR ERROR: Unknown response code!")
-		end
+		subtree:add(response_field, buffer(0,1))
+		subtree:add(command_field, buffer(1,1))
 		
-		dissect_dacstatus(buffer(1, buffer:len()-1), pinfo, subtree)
+		if(dac_response == 'v') then
+			subtree:append_text(   " (Version Report)")
+			pinfo.cols.info:append(" (Version Report)")
+			subtree:add(dac_versionString_field, buffer(1,31) )
+		else 
+			if(dac_response == 'a') then
+				subtree:append_text(" (ACK)")
+				pinfo.cols.info:append(" (ACK)")
+			elseif(dac_response == 'F') then
+				subtree:append_text(" (NAK: Insufficient Buffer Space)")
+				pinfo.cols.info:append(" (NAK: Insufficient Buffer Space)"	)		
+			elseif(dac_response == 'I') then
+				subtree:append_text(" (NAK: Invalid)")
+				pinfo.cols.info:append(" (NAK: Invalid)")
+			elseif(dac_response == '!') then
+				subtree:append_text(" (NAK: Emergency Stop Active)")
+				pinfo.cols.info:append(" (NAK: Emergency Stop Active)")
+			else 
+				subtree:append_text(" DISSECTOR ERROR: Unknown response code!")
+				pinfo.cols.info:append(" DISSECTOR ERROR: Unknown response code!")
+			end
+			
+			dissect_dacstatus(buffer(2, buffer:len()-2), pinfo, subtree)
+		end
 	end
  
  
