@@ -37,77 +37,78 @@ local BCAST_PORT = 7654
 local STREAM_PORT = 7765
 
 etherdream_cmdText = {
-  {0x70, 0x70, "Prepare Stream"    },
-  {0x62, 0x62, "Begin Playback"    },
-  {0x64, 0x64, "Write Data"    },
-  {0x71, 0x71, "Queue Rate Change" },
-  {0x73, 0x73, "Stop"              },
-  {0x76, 0x76, "Version Request"   },
-  {0x3f, 0x3f,  "Ping"             },
-  {0x00, 0x00,  "E-Stop"           },
-  {0xff, 0xff,  "E-Stop"           },
+  [0x70]= "Prepare Stream"    ,
+  [0x62]= "Begin Playback"    ,
+  [0x64]= "Write Data"        ,
+  [0x71]= "Queue Rate Change" ,
+  [0x73]= "Stop"              ,
+  [0x76]= "Version Request"   ,
+  [0x3f]=  "Ping"             ,
+  [0x00]=  "E-Stop"           ,
+  [0xff]=  "E-Stop"           ,
 }
 
 etherdream_responseText = {
-  {0x61, 0x61, "ACKnowledge"    },
-  {0x46, 0x46, "NAK - Full"    },
-  {0x49, 0x49, "NAK - Invalid" },
-  {0x21, 0x21, "NAK - Stop"          },
+  [0x61]= "ACKnowledge"    ,
+  [0x46]= "NAK - Full"    ,
+  [0x49]= "NAK - Invalid" ,
+  [0x21]= "NAK - Stop"          ,
 }
 
 etherdream_lightEngineStateText = {
-  {0x00, 0x00, "Ready"},
-  {0x01, 0x01, "Warmup"},
-  {0x02, 0x02, "Cooldown"},
-  {0x03, 0x03, "Emergency Stop"},
-  {0x04, 0xff, "UNDEFINED"},
+  [0x00]= "Ready",
+  [0x01]= "Warmup",
+  [0x02]= "Cooldown",
+  [0x03]= "Emergency Stop",
+  [0x04]= "UNDEFINED",
 }
 
 etherdream_playbackStateText = { 
-  {0x00, 0x00, "Idle"},
-  {0x01, 0x01, "Prepared"},
-  {0x02, 0x02, "Playing"},
-  {0x03, 0xff, "UNDEFINED"},
+  [0x00]= "Idle",
+  [0x01]= "Prepared",
+  [0x02]= "Playing",
+  [0x03]= "UNDEFINED",
 }
 
 etherdream_sourceText = { 
-  {0x00, 0x00, "Network"},
-  {0x01, 0x01, "SD Card"},
-  {0x02, 0x02, "Internal Abstract"},
-  {0x03, 0xff, "UNDEFINED"},
+  [0x00]= "Network",
+  [0x01]= "SD Card",
+  [0x02]= "Internal Abstract",
+  [0x03]= "UNDEFINED",
 }
  
-local hwRev_field          = ProtoField.uint16(   "etherdream.broadcast.hw_version",     "HW Version", base.DEC)
-local swRev_field          = ProtoField.uint16(   "etherdream.broadcast.sw_version",     "SW Version",        base.DEC)
-local bufferCapacity_field = ProtoField.uint16(   "etherdream.broadcast.buffer_cap",     "Buffer Capacity",        base.DEC)
-local maxPointRate_field   = ProtoField.uint16(   "etherdream.broadcast.max_point_rate", "Max Point Rate",     base.DEC)
+local hwRev_field                  = ProtoField.uint16( "etherdream.broadcast.hw_version",          "HW Version",                    base.DEC)
+local swRev_field                  = ProtoField.uint16( "etherdream.broadcast.sw_version",          "SW Version",                    base.DEC)
+local bufferCapacity_field         = ProtoField.uint16( "etherdream.broadcast.buffer_cap",          "Buffer Capacity",               base.DEC)
+local maxPointRate_field           = ProtoField.uint16( "etherdream.broadcast.max_point_rate",      "Max Point Rate",                base.DEC)
+                                                                                                                                     
+local dac_protocol_field           = ProtoField.uint8(  "etherdream.dac_status.protocol",           "DAC Protocol",                  base.DEC)
+local dac_le_state_field           = ProtoField.uint8(  "etherdream.dac_status.le_state",           "DAC Light Engine State",        base.HEX, etherdream_lightEngineStateText)
+local dac_playbackstate_field      = ProtoField.uint8(  "etherdream.dac_status.playback_sate",      "DAC Playback State",            base.HEX, etherdream_playbackStateText)
+local dac_source_field             = ProtoField.uint8(  "etherdream.dac_status.source",             "DAC Source",                    base.HEX, etherdream_sourceText)
+                                                                                                                                     
+local dac_le_flags_field           = ProtoField.uint16( "etherdream.dac_status.le.estop_network",   "Light Engine Flages",           base.HEX)
+local dac_le_flags_estop_remote    = ProtoField.uint16( "etherdream.dac_status.le.estop_network",   "E-Stop due to packet or invalid command", base.DEC, NULL, 0x01)
+local dac_le_flags_estop_local     = ProtoField.uint16( "etherdream.dac_status.le.estop_local",     "E-Stop due to local input",     base.DEC, NULL, 0x02)
+local dac_le_flags_estop_active    = ProtoField.uint16( "etherdream.dac_status.le.estop_active",    "E-Stop is currently active",    base.DEC, NULL, 0x04)
+local dac_le_flags_estop_temp      = ProtoField.uint16( "etherdream.dac_status.le.estop_temp",      "E-Stop due to overtemperature", base.DEC, NULL, 0x08)
+local dac_le_flags_overtemp_active = ProtoField.uint16( "etherdream.dac_status.le.overtemp",        "Currently over temperature",    base.DEC, NULL, 0x10)
+local dac_le_flags_estop_link      = ProtoField.uint16( "etherdream.dac_status.le.estop_link",      "E-Stop due to link loss",       base.DEC, NULL, 0x20)
 
-local dac_protocol_field           = ProtoField.uint8(    "etherdream.dac_status.protocol",        "DAC Protocol",           base.DEC)
-local dac_le_state_field           = ProtoField.uint8(    "etherdream.dac_status.le_state",        "DAC Light Engine State", base.RANGE_STRING, etherdream_lightEngineStateText)
-local dac_playbackstate_field      = ProtoField.uint8(    "etherdream.dac_status.playback_sate",   "DAC Playback State",     base.RANGE_STRING, etherdream_playbackStateText)
-local dac_source_field             = ProtoField.uint8(    "etherdream.dac_status.source",          "DAC Source",             base.RANGE_STRING, etherdream_sourceText)
-                                   
-local dac_le_flags_field           = ProtoField.uint16(   "etherdream.dac_status.le.estop_network","Light Engine Flages", base.HEX)
-local dac_le_flags_estop_remote    = ProtoField.uint16(   "etherdream.dac_status.le.estop_network","E-Stop due to packet or invalid command", base.DEC, NULL, 0x01)
-local dac_le_flags_estop_local     = ProtoField.uint16(   "etherdream.dac_status.le.estop_local",  "E-Stop due to local input", base.DEC, NULL, 0x02)
-local dac_le_flags_estop_active    = ProtoField.uint16(   "etherdream.dac_status.le.estop_active", "E-Stop is currently active", base.DEC, NULL, 0x04)
-local dac_le_flags_estop_temp      = ProtoField.uint16(   "etherdream.dac_status.le.estop_temp",   "E-Stop due to overtemperature", base.DEC, NULL, 0x08)
-local dac_le_flags_overtemp_active = ProtoField.uint16(   "etherdream.dac_status.le.overtemp",  "Currently over temperature", base.DEC, NULL, 0x10)
-local dac_le_flags_estop_link      = ProtoField.uint16(   "etherdream.dac_status.le.estop_link",   "E-Stop due to link loss", base.DEC, NULL, 0x20)
-
-local dac_playback_flags_field     = ProtoField.uint16(   "etherdream.dac_status.playback_flags",     "DAC Playback Flags",     base.HEX)
-local dac_playback_flags_shutter   = ProtoField.uint16(   "etherdream.dac_status.playback.shutter",   "Shutter open",     base.DEC, NULL, 0x01)
-local dac_playback_flags_underflow = ProtoField.uint16(   "etherdream.dac_status.playback.underflow", "Stream Underflow",     base.DEC, NULL, 0x02)
-local dac_playback_flags_estop     = ProtoField.uint16(   "etherdream.dac_status.playback.estop",     "Stream was E-Stopped",     base.DEC, NULL, 0x04)
+local dac_playback_flags_field     = ProtoField.uint16( "etherdream.dac_status.playback_flags",     "DAC Playback Flags",            base.HEX)
+local dac_playback_flags_shutter   = ProtoField.uint16( "etherdream.dac_status.playback.shutter",   "Shutter open",                  base.DEC, NULL, 0x01)
+local dac_playback_flags_underflow = ProtoField.uint16( "etherdream.dac_status.playback.underflow", "Stream Underflow",              base.DEC, NULL, 0x02)
+local dac_playback_flags_estop     = ProtoField.uint16( "etherdream.dac_status.playback.estop",     "Stream was E-Stopped",          base.DEC, NULL, 0x04)
 
 
-local dac_source_flags_field       = ProtoField.uint16(   "etherdream.dac_status.source_flags",    "DAC Source Flags",       base.DEC)
-local dac_buffer_fullness_field    = ProtoField.uint16(   "etherdream.dac_status.buffer_fullness", "DAC Buffer Fullness",    base.DEC)
-local dac_pointrate_field          = ProtoField.uint32(   "etherdream.dac_status.pointrate", 	    "DAC Pointrate",          base.DEC)
-local dac_pointcount_field         = ProtoField.uint32(   "etherdream.dac_status.pointcount", 	    "DAC Point Count",        base.DEC)
-local dac_versionString_field      = ProtoField.string(   "etherdream.dac_status.version_string",  "DAC Version String",     base.ASCII)
-local command_field				   = ProtoField.uint8(    "etherdream.command",                    "Command",                base.RANGE_STRING, etherdream_cmdText)
-local response_field     		   = ProtoField.uint8(    "etherdream.response",                   "DAC Response",           base.RANGE_STRING, etherdream_responseText)
+local dac_source_flags_field       = ProtoField.uint16( "etherdream.dac_status.source_flags",       "DAC Source Flags",     base.DEC)
+local dac_buffer_fullness_field    = ProtoField.uint16( "etherdream.dac_status.buffer_fullness",    "DAC Buffer Fullness",  base.DEC)
+local dac_pointrate_field          = ProtoField.uint32( "etherdream.dac_status.pointrate", 	        "DAC Pointrate",        base.DEC)
+local dac_pointcount_field         = ProtoField.uint32( "etherdream.dac_status.pointcount", 	       "DAC Point Count",   base.DEC)
+local dac_versionString_field      = ProtoField.string( "etherdream.dac_status.version_string",     "DAC Version String",   base.ASCII)
+                                                                                                                            
+local command_field				   = ProtoField.uint8(  "etherdream.command",                       "Command",              base.HEX, etherdream_cmdText)
+local response_field     		   = ProtoField.uint8(  "etherdream.response",                      "DAC Response",         base.HEX, etherdream_responseText)
                                    
 local data_nPoints				   = ProtoField.uint16( "etherdream.data.npoints", "Num Points", base.DEC)
 
