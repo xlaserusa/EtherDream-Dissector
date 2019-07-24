@@ -10,6 +10,9 @@ See the Wireshark documentation for installation of LUA plugins: https://www.wir
 
 The EtherDream DAC protocol is documented here: https://ether-dream.com/protocol.html
 
+DACs broadcast their identity and status on UDP port 7654.  
+Controllers connect to the DAC on TCP port 7765.
+
 **Note:**
 - The version request command ('v') is not currently documented, but is implemented by the EtherDream Diagnostic tool
 - The documentation page currently includes a self-contradictory statement about byte order: multi-byte values are all sent LSB-first
