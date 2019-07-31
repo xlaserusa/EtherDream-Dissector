@@ -152,20 +152,20 @@ etherdream_proto.fields = {
 }
 
 function dissect_leflags(buffer, pinfo, tree)
-	local subtree = tree:add(dac_le_flags_field, buffer(0,2))
-	subtree:add(dac_le_flags_estop_remote, buffer(0,2))
-	subtree:add(dac_le_flags_estop_local, buffer(0,2))
-	subtree:add(dac_le_flags_estop_active, buffer(0,2))
-	subtree:add(dac_le_flags_estop_temp, buffer(0,2))
-	subtree:add(dac_le_flags_overtemp_active, buffer(0,2))
-	subtree:add(dac_le_flags_estop_link, buffer(0,2))
+	local subtree = tree:add_le(dac_le_flags_field, buffer(0,2))
+	subtree:add_le(dac_le_flags_estop_remote, buffer(0,2))
+	subtree:add_le(dac_le_flags_estop_local, buffer(0,2))
+	subtree:add_le(dac_le_flags_estop_active, buffer(0,2))
+	subtree:add_le(dac_le_flags_estop_temp, buffer(0,2))
+	subtree:add_le(dac_le_flags_overtemp_active, buffer(0,2))
+	subtree:add_le(dac_le_flags_estop_link, buffer(0,2))
 end
 
 function dissect_playback_flags(buffer, pinfo, tree)
-	local subtree = tree:add(dac_playback_flags_field, buffer(0,2))
-	subtree:add(dac_playback_flags_shutter, buffer(0,2))
-	subtree:add(dac_playback_flags_underflow, buffer(0,2))
-	subtree:add(dac_playback_flags_estop, buffer(0,2))
+	local subtree = tree:add_le(dac_playback_flags_field, buffer(0,2))
+	subtree:add_le(dac_playback_flags_shutter, buffer(0,2))
+	subtree:add_le(dac_playback_flags_underflow, buffer(0,2))
+	subtree:add_le(dac_playback_flags_estop, buffer(0,2))
 end
 
 function dissect_dacstatus(buffer, pinfo, tree)
