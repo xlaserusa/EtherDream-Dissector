@@ -40,12 +40,15 @@ etherdream_cmdText = {
   [0x70]= "Prepare Stream"    ,
   [0x62]= "Begin Playback"    ,
   [0x64]= "Write Data"        ,
+  [0x44]= "Write Data"        ,
   [0x71]= "Queue Rate Change" ,
   [0x73]= "Stop"              ,
   [0x76]= "Version Request"   ,
   [0x3f]=  "Ping"             ,
   [0x00]=  "E-Stop"           ,
   [0xff]=  "E-Stop"           ,
+  [0x49]= "Install Plugin"	  ,
+  [0x50]= "Pass Plugin Data"  ,
 }
 
 etherdream_responseText = {
@@ -108,7 +111,8 @@ local dac_pointcount_field         = ProtoField.uint32( "etherdream.dac_status.p
 local dac_versionString_field      = ProtoField.string( "etherdream.dac_status.version_string",     "DAC Version String",   base.ASCII)
                                                                                                                             
 local command_field				   = ProtoField.uint8(  "etherdream.command",                       "Command",              base.HEX, etherdream_cmdText)
-local response_field     		   = ProtoField.uint8(  "etherdream.response",                      "DAC Response",         base.HEX, etherdream_responseText)
+local response_field     		   = ProtoField.uint8(  "etherdream.response.code",                 "DAC Response",         base.HEX, etherdream_responseText)
+local responsecommand_field		   = ProtoField.uint8(  "etherdream.response.command",              "Command",              base.HEX, etherdream_cmdText)
                                    
 local data_nPoints				   = ProtoField.uint16( "etherdream.data.npoints", "Num Points", base.DEC)
 
@@ -147,6 +151,7 @@ etherdream_proto.fields = {
 
 	command_field,
 	response_field,
+	responsecommand_field,
 	
 	data_nPoints,
 }
@@ -220,7 +225,7 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		elseif (command == 'q') then
 			subtree:append_text(   " (Queue Rate Change)")
 			pinfo.cols.info:append(" (Queue Rate Change)")
-		elseif (command == 'd') then
+		elseif ((command == 'd') or (command == 'D')) then
 			subtree:append_text(   " (Write Data)")
 			pinfo.cols.info:append(" (Write Data)")
 			dissect_data(buffer, pinfo, subtree)
@@ -230,6 +235,12 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		elseif (command == 'v') then
 			subtree:append_text(   " (Version Request)")
 			pinfo.cols.info:append(" (Version Request)")
+		elseif (command == 'I') then
+			subtree:append_text(   " (Install Plugin)")
+			pinfo.cols.info:append(" (Install Plugin)")
+		elseif (command == 'P') then
+			subtree:append_text(   " (Pass Plugin Data)")
+			pinfo.cols.info:append(" (Pass Plugin Data)")
 		elseif (command == 'c') then
 			subtree:append_text(   " (Clear E-Stop)")
 			pinfo.cols.info:append(" (Clear E-Stop)")
@@ -248,7 +259,7 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		local dac_response = buffer(0,1):string()
 		
 		subtree:add(response_field, buffer(0,1))
-		subtree:add(command_field, buffer(1,1))
+		subtree:add(responsecommand_field, buffer(1,1))
 		
 		if(dac_response == 'v') then
 			subtree:append_text(   " (Version Report)")
