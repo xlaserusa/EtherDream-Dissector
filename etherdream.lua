@@ -201,7 +201,6 @@ function response_infostring(buffer)
 	local resp = etherdream_responseText[buffer(0,1):uint()] or "Unknown response"
 	local respcmd = etherdream_cmdText[buffer(1,1):uint()] or "Unknown command"
 	return " ("..resp..":"..respcmd..")"
-
 end
 
 function etherdream_proto.dissector(buffer,pinfo,tree)
@@ -250,83 +249,10 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 			dissect_dacstatus(buffer(2, buffer:len()-2), pinfo, subtree)
 		end
 	end
- 
- 
---[[ 
-  --pinfo.cols.protocol = buffer(0,22):string()
-  
-  -- if the message is less then the length 
-  if (buffer:len() < 23) then return end
-  
-  if (buffer(0,23):string() == "Wysiwyg Laser Protocol\0" ) then
-	pinfo.cols.protocol = "WYSIWYG Laser Data"
-    local subtree = tree:add(wysiwyg_proto,buffer(),"WYSIWYG Laser Protocol Data")
-	
-	if (buffer:len() < 44) then
-	  pinfo.cols.info = "ERR: message too short"
-	  return
-	end
-	
-	version = buffer(23,1):uint()
-	
-	if (version ~= 1) then
-	  pinfo.cols.info = "ERR: " .. version .. " is not a valid version"
-	  return
-	end
-	
-	local device = buffer(44,1):uint()+1
-	local frame = buffer(45,1):uint()
-	local fragment = buffer(46,1):uint()
-	
-	local header = subtree:add(buffer(0,52), "Header (device " .. device .. ", frame " .. frame .. ", fragment " .. fragment .. ")")
-	
-	header:add( version_field,      buffer(23,1) )
-    header:add( device_field,       buffer(32,1) )
-	header:add( frame_field,        buffer(33,1) )
-	header:add( fragment_field,     buffer(34,1) )
-	header:add( numFragments_field, buffer(35,1) )
-	header:add( numPoints_field,    buffer(36,1) )
-	
-	local pointCount = buffer(36,1):uint()
-	
-	if (pointCount * 6 + 44 ~= buffer:len()) then
-		  pinfo.cols.info = "ERR: Header claims " .. pointCount .. "points. Expected total of " .. pointCount * 6 + 44 .. " bytes but received " .. buffer:len()
-	  return
-	end
-	
-	local pointData = subtree:add(buffer(44, buffer:len()-44), "Points (" .. pointCount .. ")")
-	
-	for i=0, pointCount-1, 1 do
-      x = buffer(44 + i * 6 + 0, 1):int()
-	  y = buffer(44 + i * 6 + 1, 1):int()
-	  -- need to add LSB of x and y positions
-	  r = buffer(44 + i * 6 + 3, 1):uint()
-	  g = buffer(44 + i * 6 + 4, 1):uint()
-	  b = buffer(44 + i * 6 + 5, 1):uint()
-	  pointData:add(buffer(44+i*6, 6),  string.format("pt%3d: %6d,%6d: %3d,%3d,%3d", i, x, y, r, g, b))
-	end
-	
-  end
-
-]]--
-
 end -- end function citp_proto.dissector
-
-
-
-
-
--- ---------------------------------------------------------------------
--- Formatters
--- ---------------------------------------------------------------------
-
 
 udp_table = DissectorTable.get("udp.port")
 tcp_table = DissectorTable.get("tcp.port")
 
--- register our protocol to handle udp port 7777
 udp_table:add(BCAST_PORT, etherdream_proto)
 tcp_table:add(STREAM_PORT, etherdream_proto)
---Debug, Add Mbox
---CITP_add_port(6436) -- PRG Mbox
---CITP_add_port(4011) -- Arkaos Media Master
