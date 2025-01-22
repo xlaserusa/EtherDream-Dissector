@@ -52,10 +52,10 @@ etherdream_cmdText = {
 }
 
 etherdream_responseText = {
-  [0x61]= "ACKnowledge"    ,
-  [0x46]= "NAK - Full"    ,
-  [0x49]= "NAK - Invalid" ,
-  [0x21]= "NAK - Stop"          ,
+  [0x61]= "ACK"    ,
+  [0x46]= "NAK[Full]"    ,
+  [0x49]= "NAK[Invalid]" ,
+  [0x21]= "NAK[Stop]"          ,
 }
 
 etherdream_lightEngineStateText = {
@@ -192,6 +192,18 @@ function dissect_data(buffer, pinfo, tree)
 	subtree:add_le(data_nPoints, buffer(1,2))
 end
 
+function command_infostring(buffer)
+	local cmdtext = etherdream_cmdText[buffer(0,1):uint()] or string.format("Unknown command: 0x%02x", buffer(0,1):uint())
+	return " ("..cmdtext..")"
+end
+
+function response_infostring(buffer)
+	local resp = etherdream_responseText[buffer(0,1):uint()] or "Unknown response"
+	local respcmd = etherdream_cmdText[buffer(1,1):uint()] or "Unknown command"
+	return " ("..resp..":"..respcmd..")"
+
+end
+
 function etherdream_proto.dissector(buffer,pinfo,tree)
 	pinfo.cols.protocol = "EtherDream"
 	
@@ -212,44 +224,10 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		local command = buffer(0,1):string()
 		
 		subtree:add(command_field, buffer(0,1))
-		
-		if(buffer(0,1):uint()==0xff) then
-			subtree:append_text(   " (E-Stop)")
-			pinfo.cols.info:append(" (E-Stop)")
-		elseif (command == 'p') then
-			subtree:append_text(   " (Prepare Stream)")
-			pinfo.cols.info:append(" (Prepare Stream)")
-		elseif (command == 'b') then
-			subtree:append_text(   " (Begin Playback)")
-			pinfo.cols.info:append(" (Begin Playback)")
-		elseif (command == 'q') then
-			subtree:append_text(   " (Queue Rate Change)")
-			pinfo.cols.info:append(" (Queue Rate Change)")
-		elseif ((command == 'd') or (command == 'D')) then
-			subtree:append_text(   " (Write Data)")
-			pinfo.cols.info:append(" (Write Data)")
-			dissect_data(buffer, pinfo, subtree)
-		elseif (command == 's') then
-			subtree:append_text(   " (Stop)")
-			pinfo.cols.info:append(" (Stop)")
-		elseif (command == 'v') then
-			subtree:append_text(   " (Version Request)")
-			pinfo.cols.info:append(" (Version Request)")
-		elseif (command == 'I') then
-			subtree:append_text(   " (Install Plugin)")
-			pinfo.cols.info:append(" (Install Plugin)")
-		elseif (command == 'P') then
-			subtree:append_text(   " (Pass Plugin Data)")
-			pinfo.cols.info:append(" (Pass Plugin Data)")
-		elseif (command == 'c') then
-			subtree:append_text(   " (Clear E-Stop)")
-			pinfo.cols.info:append(" (Clear E-Stop)")
-		elseif (command == '?') then
-			subtree:append_text(   " (Ping)")
-			pinfo.cols.info:append(" (Ping)")
-		end
-		
-		
+
+		subtree:append_text(command_infostring(buffer))
+		pinfo.cols.info:append(command_infostring(buffer))
+
 	elseif(pinfo.src_port == STREAM_PORT) then
 		pinfo.cols.info = "DAC Response"
 		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream DAC Response")
@@ -257,6 +235,7 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		local dissect_status = true
 		
 		local dac_response = buffer(0,1):string()
+		local responsecommand_field = buffer(1,1):uint()
 		
 		subtree:add(response_field, buffer(0,1))
 		subtree:add(responsecommand_field, buffer(1,1))
@@ -266,23 +245,8 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 			pinfo.cols.info:append(" (Version Report)")
 			subtree:add(dac_versionString_field, buffer(1,31) )
 		else 
-			if(dac_response == 'a') then
-				subtree:append_text(" (ACK)")
-				pinfo.cols.info:append(" (ACK)")
-			elseif(dac_response == 'F') then
-				subtree:append_text(" (NAK: Insufficient Buffer Space)")
-				pinfo.cols.info:append(" (NAK: Insufficient Buffer Space)"	)		
-			elseif(dac_response == 'I') then
-				subtree:append_text(" (NAK: Invalid)")
-				pinfo.cols.info:append(" (NAK: Invalid)")
-			elseif(dac_response == '!') then
-				subtree:append_text(" (NAK: Emergency Stop Active)")
-				pinfo.cols.info:append(" (NAK: Emergency Stop Active)")
-			else 
-				subtree:append_text(" DISSECTOR ERROR: Unknown response code!")
-				pinfo.cols.info:append(" DISSECTOR ERROR: Unknown response code!")
-			end
-			
+			pinfo.cols.info:append(response_infostring(buffer))
+			subtree:add(response_infostring(buffer))
 			dissect_dacstatus(buffer(2, buffer:len()-2), pinfo, subtree)
 		end
 	end
