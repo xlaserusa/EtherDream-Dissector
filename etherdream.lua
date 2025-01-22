@@ -234,7 +234,6 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		local dissect_status = true
 		
 		local dac_response = buffer(0,1):string()
-		local responsecommand_field = buffer(1,1):uint()
 		
 		subtree:add(response_field, buffer(0,1))
 		subtree:add(responsecommand_field, buffer(1,1))
@@ -245,8 +244,6 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 			subtree:add(dac_versionString_field, buffer(1,31) )
 		else 
 			pinfo.cols.info:append(response_infostring(buffer))
-			subtree:add(response_infostring(buffer))
-			dissect_dacstatus(buffer(2, buffer:len()-2), pinfo, subtree)
 		end
 	end
 end -- end function citp_proto.dissector
