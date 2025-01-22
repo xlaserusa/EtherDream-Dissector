@@ -111,12 +111,13 @@ local dac_pointcount_field         = ProtoField.uint32( "etherdream.dac_status.p
 local dac_versionString_field      = ProtoField.string( "etherdream.dac_status.version_string",     "DAC Version String",   base.ASCII)
                                                                                                                             
 local command_field				   = ProtoField.uint8(  "etherdream.command",                       "Command",              base.HEX, etherdream_cmdText)
-local response_field     		   = ProtoField.uint8(  "etherdream.response.code",                 "DAC Response",         base.HEX, etherdream_responseText)
+local response_field		       = ProtoField.none(    "etherdream.response",						"Response",       		base.ASCII)
+local responsecode_field   		   = ProtoField.uint8(  "etherdream.response.code",                 "DAC Response",         base.HEX, etherdream_responseText)
 local responsecommand_field		   = ProtoField.uint8(  "etherdream.response.command",              "Command",              base.HEX, etherdream_cmdText)
                                    
 local data_nPoints				   = ProtoField.uint16( "etherdream.data.npoints", "Num Points", base.DEC)
 
-
+local ef_excess_data			   = ProtoExpert.new("etherdream.expert.excessdata", "Field missing or malformed", expert.group.MALFORMED, expert.severity.WARN)
 
 etherdream_proto.fields = {
     hwRev_field,
@@ -151,9 +152,14 @@ etherdream_proto.fields = {
 
 	command_field,
 	response_field,
+	responsecode_field,
 	responsecommand_field,
 	
 	data_nPoints,
+}
+
+etherdream_proto.experts = {
+	ef_excess_data
 }
 
 function dissect_leflags(buffer, pinfo, tree)
@@ -174,7 +180,11 @@ function dissect_playback_flags(buffer, pinfo, tree)
 end
 
 function dissect_dacstatus(buffer, pinfo, tree)
-    subtree = tree:add(buffer(),"DAC Status")
+	if(buffer:len() > 22) then 
+		ef = tree:add_proto_expert_info(ef_excess_data, string.format("Excess data appended to status (expected 20 bytes, got %d)", buffer:len()-2))
+	end
+    subtree = tree:add(buffer(2,22),"DAC Status")
+
 	subtree:add_le(dac_protocol_field, buffer(0,1))
 	subtree:add_le(dac_le_state_field, buffer(1,1))
 	subtree:add_le(dac_playbackstate_field, buffer(2,1))
@@ -208,7 +218,7 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 	
 	if(pinfo.dst_port == BCAST_PORT) then
 		pinfo.cols.info = "DAC Advertisement"
-		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream DAC Advertisement")
+		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream [DAC Advertisement]")
 		--TODO: Report MAC Address
 		subtree:add_le(hwRev_field, buffer(6,2) )
 		subtree:add_le(swRev_field, buffer(8,2) )
@@ -218,7 +228,7 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 	
 	elseif(pinfo.dst_port == STREAM_PORT) then
 		pinfo.cols.info = "Control Data"
-		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream Control")
+		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream [Control]")
 		
 		local command = buffer(0,1):string()
 		
@@ -229,13 +239,14 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 
 	elseif(pinfo.src_port == STREAM_PORT) then
 		pinfo.cols.info = "DAC Response"
-		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream DAC Response")
+		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream [DAC Response]")
 		
 		local dissect_status = true
 		
 		local dac_response = buffer(0,1):string()
-		
-		subtree:add(response_field, buffer(0,1))
+		subtree = subtree:add(response_field, buffer())
+
+		subtree:add(responsecode_field, buffer(0,1))
 		subtree:add(responsecommand_field, buffer(1,1))
 		
 		if(dac_response == 'v') then
@@ -244,6 +255,7 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 			subtree:add(dac_versionString_field, buffer(1,31) )
 		else 
 			pinfo.cols.info:append(response_infostring(buffer))
+			dissect_dacstatus(buffer(), pinfo, subtree)
 		end
 	end
 end -- end function citp_proto.dissector
