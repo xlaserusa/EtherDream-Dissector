@@ -90,7 +90,7 @@ local dac_le_state_field           = ProtoField.uint8(  "etherdream.dac_status.l
 local dac_playbackstate_field      = ProtoField.uint8(  "etherdream.dac_status.playback_sate",      "DAC Playback State",            base.HEX, etherdream_playbackStateText)
 local dac_source_field             = ProtoField.uint8(  "etherdream.dac_status.source",             "DAC Source",                    base.HEX, etherdream_sourceText)
                                                                                                                                      
-local dac_le_flags_field           = ProtoField.uint16( "etherdream.dac_status.le.estop_network",   "Light Engine Flages",           base.HEX)
+local dac_le_flags_field           = ProtoField.uint16( "etherdream.dac_status.le.estop_network",   "Light Engine Flags",            base.HEX)
 local dac_le_flags_estop_remote    = ProtoField.uint16( "etherdream.dac_status.le.estop_network",   "E-Stop due to packet or invalid command", base.DEC, NULL, 0x01)
 local dac_le_flags_estop_local     = ProtoField.uint16( "etherdream.dac_status.le.estop_local",     "E-Stop due to local input",     base.DEC, NULL, 0x02)
 local dac_le_flags_estop_active    = ProtoField.uint16( "etherdream.dac_status.le.estop_active",    "E-Stop is currently active",    base.DEC, NULL, 0x04)
