@@ -118,8 +118,13 @@ local responsecommand_field        = ProtoField.uint8(  "etherdream.response.com
 local command_write_field          = ProtoField.none(   "etherdream.command.write",                 "Write Command",                           base.HEX)
 local command_write_nPoints        = ProtoField.uint16( "etherdream.write.npoints",                 "Num Points",                              base.DEC)
 local command_write_dataSize       = ProtoField.uint16( "etherdream.write.datasize",                "Size of point data in bytes",             base.DEC)
+local command_write_segDataSize    = ProtoField.uint16( "etherdream.write.segdatasize",             "Size of point data in this segment",      base.DEC)
+local command_write_data           = ProtoField.none(   "etherdream.write.data",                    "Point Data",                              base.HEX)
 
-local command_prepare              = ProtoField.uint8(  "etherdream.command.prepare",               "Prepare for Playback",                    base.ASCII)
+local command_queue_field          = ProtoField.none(   "etherdream.command.queue",                 "Queue Rate Change",                       base.HEX)
+local command_queue_pointrate      = ProtoField.uint32( "etherdream.queue.pointrate",               "Point Rate",                              base.DEC)
+
+local command_prepare_field        = ProtoField.none(   "etherdream.command.prepare",               "Prepare for Playback",                    base.HEX)
 
 local command_begin                = ProtoField.none(   "etherdream.command.begin",                 "Begin Playback",                          base.ASCII)
 local command_begin_lowwatermark   = ProtoField.uint16( "etherdream.command.begin.lowwatermark",    "Low Water Mark",                          base.DEC)
@@ -161,7 +166,12 @@ etherdream_proto.fields = {
 
 	command_field,
 	command_write_field,
-	command_prepare, 
+	command_write_nPoints,
+	command_write_dataSize,
+	command_write_segDataSize,
+	command_write_data,
+
+	command_prepare_field, 
 
 	command_begin,
 	command_begin_lowwatermark,
@@ -170,9 +180,9 @@ etherdream_proto.fields = {
 	response_field,
 	responsecode_field,
 	responsecommand_field,
-	
-	command_write_nPoints,
-	command_write_dataSize,
+
+	command_queue_field,
+	command_queue_pointrate,
 }
 
 etherdream_proto.experts = {
@@ -180,12 +190,28 @@ etherdream_proto.experts = {
 	ef_unusual_pointrate,
 }
 
+-- subdissectors return the number of bytes they consume out of the buffer, including the command byte, so the main dissector can check for additional concatenated commands
+
 function dissect_command_write(buffer, pinfo, tree)
-	dataSize = buffer(1,2):uint() * 18
-	subtree = tree:add(command_write_field, buffer())
+	nPoints = buffer(1,2):le_uint()
+	dataSize = nPoints * 18
+	local segDataSize = dataSize
+	if segDataSize > buffer:len() - 3 then
+		segDataSize = buffer:len() - 3
+	end
+	subtree = tree:add(command_write_field, buffer(0,3+segDataSize))
 	subtree:add_le(command_write_nPoints, buffer(1,2))
 	subtree:add(command_write_dataSize, dataSize)
+	subtree:add(command_write_segDataSize, segDataSize)
+	subtree:add(command_write_data, buffer(3, segDataSize))
+	return 3 + segDataSize
 end 
+
+function dissect_command_queuerc(buffer, pinfo, tree)
+	subtree = tree:add(command_queue_field, buffer(0,4))
+	subtree:add_le(command_queue_pointrate, buffer(1,4))
+	return 5
+end
 
 function dissect_command_begin(buffer, pinfo, tree)
 	local maxpointrate = 120000
@@ -200,12 +226,20 @@ function dissect_command_begin(buffer, pinfo, tree)
 	elseif(pointrate < minpointrate) then
 		subtree:add_proto_expert_info(ef_unusual_pointrate, string.format("Point rate of %d below expected min of %d", pointrate, minpointrate))
 	end
+	return 7
 end 
+
+function dissect_command_prepare(buffer, pinfo, tree)
+	subtree = tree:add(command_prepare_field, buffer(0,1))
+	return 1
+end
 
 
 etherdream_cmdDissectors = {
+	[0x70] = dissect_command_prepare,
 	[0x64] = dissect_command_write,
 	[0x62] = dissect_command_begin,
+	[0x71] = dissect_command_queuerc,
   }
 
 function dissect_leflags(buffer, pinfo, tree)
@@ -226,10 +260,10 @@ function dissect_playback_flags(buffer, pinfo, tree)
 end
 
 function dissect_dacstatus(buffer, pinfo, tree)
-	if(buffer:len() > 22) then 
-		ef = tree:add_proto_expert_info(ef_excess_data, string.format("Excess data appended to status (expected 20 bytes, got %d)", buffer:len()-2))
+	if(buffer:len() ~= 20) then 
+		ef = tree:add_proto_expert_info(ef_excess_data, string.format("Unexpected length of status message (expected 20 bytes, got %d)", buffer:len()))
 	end
-    subtree = tree:add(buffer(2,20),"DAC Status")
+    subtree = tree:add(buffer(0,20),"DAC Status")
 
 	subtree:add_le(dac_protocol_field, buffer(0,1))
 	subtree:add_le(dac_le_state_field, buffer(1,1))
@@ -270,20 +304,25 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 	elseif(pinfo.dst_port == STREAM_PORT) then
 		pinfo.cols.info = "Control Data"
 		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream [Control]")
-		
-		local command = buffer(0,1):string()
-		commandByte = buffer(0,1):uint()
 
-		subtree:append_text(command_infostring(buffer))
-		pinfo.cols.info:append(command_infostring(buffer))
+		local bytesTaken = 0
 
-		-- subtree:add(command_field, buffer(0,1))
+		while bytesTaken < buffer:len() do
+			local slice = buffer(bytesTaken,-1)
 
-		cd = etherdream_cmdDissectors[commandByte]
-		if(cd == nil) then 
-			-- pinfo.cols.info:append(string.format("no subdissector for 0x%02x", commandByte))
-		else
-			cd(buffer, pinfo, subtree)
+			local command = slice(0,1):string()
+			commandByte = slice(0,1):uint()
+
+			subtree:append_text(command_infostring(slice))
+			pinfo.cols.info:append(command_infostring(slice))
+
+			cd = etherdream_cmdDissectors[commandByte]
+			if(cd == nil) then 
+				break
+				-- pinfo.cols.info:append(string.format("no subdissector for 0x%02x", commandByte))
+			else
+				bytesTaken = bytesTaken + cd(slice, pinfo, subtree)
+			end
 		end
 
 	elseif(pinfo.src_port == STREAM_PORT) then
@@ -304,7 +343,7 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 			subtree:add(dac_versionString_field, buffer(1,31) )
 		else 
 			pinfo.cols.info:append(response_infostring(buffer))
-			dissect_dacstatus(buffer(), pinfo, subtree)
+			dissect_dacstatus(buffer(2,20), pinfo, subtree)
 		end
 	end
 end -- end function citp_proto.dissector
