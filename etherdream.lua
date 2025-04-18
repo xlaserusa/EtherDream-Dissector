@@ -116,15 +116,19 @@ local responsecode_field           = ProtoField.uint8(  "etherdream.response.cod
 local responsecommand_field        = ProtoField.uint8(  "etherdream.response.command",              "Command",                                 base.HEX, etherdream_cmdText)
 
 local command_write_field          = ProtoField.none(   "etherdream.command.write",                 "Write Command",                           base.HEX)
+local command_write_contd_field    = ProtoField.none(   "etherdream.command.write_contd",           "Cont'd Write Command",                    base.HEX)
 local command_write_nPoints        = ProtoField.uint16( "etherdream.write.npoints",                 "Num Points",                              base.DEC)
 local command_write_dataSize       = ProtoField.uint16( "etherdream.write.datasize",                "Size of point data in bytes",             base.DEC)
 local command_write_segDataSize    = ProtoField.uint16( "etherdream.write.segdatasize",             "Size of point data in this segment",      base.DEC)
 local command_write_data           = ProtoField.none(   "etherdream.write.data",                    "Point Data",                              base.HEX)
+local command_write_remnantSize    = ProtoField.uint16( "etherdream.write.remnantSize",             "Remnant Data",                            base.DEC)
 
 local command_queue_field          = ProtoField.none(   "etherdream.command.queue",                 "Queue Rate Change",                       base.HEX)
 local command_queue_pointrate      = ProtoField.uint32( "etherdream.queue.pointrate",               "Point Rate",                              base.DEC)
 
 local command_prepare_field        = ProtoField.none(   "etherdream.command.prepare",               "Prepare for Playback",                    base.HEX)
+
+local command_estop_field          = ProtoField.none(   "etherdream.command.estop",                 "E-STOP!",                                 base.HEX)
 
 local command_begin                = ProtoField.none(   "etherdream.command.begin",                 "Begin Playback",                          base.ASCII)
 local command_begin_lowwatermark   = ProtoField.uint16( "etherdream.command.begin.lowwatermark",    "Low Water Mark",                          base.DEC)
@@ -170,12 +174,17 @@ etherdream_proto.fields = {
 	command_write_dataSize,
 	command_write_segDataSize,
 	command_write_data,
+	command_write_remnantSize,
+
+	command_write_contd_field,
 
 	command_prepare_field, 
 
 	command_begin,
 	command_begin_lowwatermark,
 	command_begin_pointrate,
+
+	command_estop_field,
 
 	response_field,
 	responsecode_field,
@@ -190,6 +199,11 @@ etherdream_proto.experts = {
 	ef_unusual_pointrate,
 }
 
+-- if a write command doesn't fit in the current segment, store the amount of remaining data for the next segment
+-- non-etherdream packets will have nil values, this allows the dissector to skip over them to find the last remnant length
+-- TODO: would be better if we could find the previous TCP segment, look into that
+local hangingData = {}
+
 -- subdissectors return the number of bytes they consume out of the buffer, including the command byte, so the main dissector can check for additional concatenated commands
 
 function dissect_command_write(buffer, pinfo, tree)
@@ -198,13 +212,57 @@ function dissect_command_write(buffer, pinfo, tree)
 	local segDataSize = dataSize
 	if segDataSize > buffer:len() - 3 then
 		segDataSize = buffer:len() - 3
+		hangingData[pinfo.number] = dataSize - segDataSize
 	end
 	subtree = tree:add(command_write_field, buffer(0,3+segDataSize))
 	subtree:add_le(command_write_nPoints, buffer(1,2))
 	subtree:add(command_write_dataSize, dataSize)
 	subtree:add(command_write_segDataSize, segDataSize)
+	if dataSize ~= segDataSize then
+		subtree:add(command_write_remnantSize, dataSize - segDataSize)
+	end
 	subtree:add(command_write_data, buffer(3, segDataSize))
 	return 3 + segDataSize
+end 
+
+function getRemnantLength(pinfo)
+	local index = pinfo.number - 1
+	while index >= 0 do
+		if hangingData[index] ~= nil then
+			return hangingData[index]
+		end
+		index = index -1
+	end
+	return 0
+end 
+
+function dissect_continued_write(buffer, pinfo, tree)
+	local segDataSize = getRemnantLength(pinfo)
+	local remnantSize = 0
+
+	if segDataSize == 0 then
+		hangingData[pinfo.number] = 0
+		return 0
+	else
+		if segDataSize > buffer:len() then 
+			remnantSize = segDataSize - buffer:len()
+			hangingData[pinfo.number] = remnantSize
+			segDataSize = buffer:len()
+		else 
+			hangingData[pinfo.number] = 0
+		end
+
+		pinfo.cols.info:append("(Write Data Cont'd)")
+		tree:append_text("(Write Data Cont'd)")
+		subtree = tree:add(command_write_contd_field, buffer(0,segDataSize))
+		subtree:add(command_write_segDataSize, segDataSize)
+		subtree:add(command_write_data, buffer(0, segDataSize))
+		if remnantSize > 0 then
+			subtree:add(command_write_remnantSize, remnantSize)
+		end
+		
+		return segDataSize
+	end
 end 
 
 function dissect_command_queuerc(buffer, pinfo, tree)
@@ -234,12 +292,18 @@ function dissect_command_prepare(buffer, pinfo, tree)
 	return 1
 end
 
+function dissect_command_estop(buffer, pinfo, tree)
+	subtree = tree:add(command_estop_field, buffer(0,1))
+	return 1
+end
 
 etherdream_cmdDissectors = {
 	[0x70] = dissect_command_prepare,
 	[0x64] = dissect_command_write,
 	[0x62] = dissect_command_begin,
 	[0x71] = dissect_command_queuerc,
+	[0x00] = dissect_command_estop,
+	[0xff] = dissect_command_estop,
   }
 
 function dissect_leflags(buffer, pinfo, tree)
@@ -305,7 +369,7 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 		pinfo.cols.info = "Control Data"
 		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream [Control]")
 
-		local bytesTaken = 0
+		local bytesTaken = dissect_continued_write(buffer, pinfo, subtree)
 
 		while bytesTaken < buffer:len() do
 			local slice = buffer(bytesTaken,-1)
