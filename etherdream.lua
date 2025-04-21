@@ -24,6 +24,8 @@ SOFTWARE.
 
 ]]--
 
+-- TODO: investigate switching to dissect_tcp_pdus()
+
 etherdream_proto = Proto("etherdream","Ether-Dream Laser Protocol")
 
 -- UDP and TCP Dissector Tables
@@ -206,13 +208,17 @@ local hangingData = {}
 
 -- subdissectors return the number of bytes they consume out of the buffer, including the command byte, so the main dissector can check for additional concatenated commands
 
+function setHangingData(pinfo, len)
+	hangingData[pinfo.number] = {[0] = pinfo.dst, [1] = len}
+end
+
 function dissect_command_write(buffer, pinfo, tree)
 	nPoints = buffer(1,2):le_uint()
 	dataSize = nPoints * 18
 	local segDataSize = dataSize
 	if segDataSize > buffer:len() - 3 then
 		segDataSize = buffer:len() - 3
-		hangingData[pinfo.number] = dataSize - segDataSize
+		setHangingData(pinfo, dataSize - segDataSize)
 	end
 	subtree = tree:add(command_write_field, buffer(0,3+segDataSize))
 	subtree:add_le(command_write_nPoints, buffer(1,2))
@@ -229,7 +235,9 @@ function getRemnantLength(pinfo)
 	local index = pinfo.number - 1
 	while index >= 0 do
 		if hangingData[index] ~= nil then
-			return hangingData[index]
+            if hangingData[index][0] == pinfo.dst then
+			    return hangingData[index][1]
+            end
 		end
 		index = index -1
 	end
@@ -241,15 +249,15 @@ function dissect_continued_write(buffer, pinfo, tree)
 	local remnantSize = 0
 
 	if segDataSize == 0 then
-		hangingData[pinfo.number] = 0
+		setHangingData(pinfo, 0)
 		return 0
 	else
 		if segDataSize > buffer:len() then 
 			remnantSize = segDataSize - buffer:len()
-			hangingData[pinfo.number] = remnantSize
+			setHangingData(pinfo, remnantSize)
 			segDataSize = buffer:len()
 		else 
-			hangingData[pinfo.number] = 0
+			setHangingData(pinfo, 0)
 		end
 
 		pinfo.cols.info:append("(Write Data Cont'd)")
@@ -272,6 +280,7 @@ function dissect_command_queuerc(buffer, pinfo, tree)
 end
 
 function dissect_command_begin(buffer, pinfo, tree)
+    -- TODO: These limits are arbitrary, maybe should be prefs?
 	local maxpointrate = 120000
 	local minpointrate = 30000
 	subtree = tree:add(command_begin, buffer())
@@ -414,6 +423,8 @@ end -- end function citp_proto.dissector
 
 udp_table = DissectorTable.get("udp.port")
 tcp_table = DissectorTable.get("tcp.port")
+
+register_postdissector(etherdream_proto)
 
 udp_table:add(BCAST_PORT, etherdream_proto)
 tcp_table:add(STREAM_PORT, etherdream_proto)
