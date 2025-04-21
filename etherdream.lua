@@ -274,7 +274,7 @@ function dissect_continued_write(buffer, pinfo, tree)
 end 
 
 function dissect_command_queuerc(buffer, pinfo, tree)
-	subtree = tree:add(command_queue_field, buffer(0,4))
+	subtree = tree:add(command_queue_field, buffer(0,5))
 	subtree:add_le(command_queue_pointrate, buffer(1,4))
 	return 5
 end
