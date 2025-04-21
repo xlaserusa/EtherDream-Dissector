@@ -361,6 +361,25 @@ function response_infostring(buffer)
 	return " ("..resp..":"..respcmd..")"
 end
 
+function dissect_dacresponse(buffer, pinfo, tree)
+	local dac_response = buffer(0,1):string()
+	subtree = tree:add(response_field, buffer())
+	
+	if(dac_response == 'v') then
+		subtree:append_text(   " (Version Report)")
+		pinfo.cols.info:append(" (Version Report)")
+		subtree:add(dac_versionString_field, buffer(1,31) )
+		return 32
+	else 
+		subtree:add(responsecode_field, buffer(0,1))
+		subtree:add(responsecommand_field, buffer(1,1))
+		subtree:append_text(response_infostring(buffer))
+		pinfo.cols.info:append(response_infostring(buffer))
+		dissect_dacstatus(buffer(2,20), pinfo, subtree)
+		return 22
+	end
+end
+
 function etherdream_proto.dissector(buffer,pinfo,tree)
 	pinfo.cols.protocol = "EtherDream"
 	
@@ -401,22 +420,10 @@ function etherdream_proto.dissector(buffer,pinfo,tree)
 	elseif(pinfo.src_port == STREAM_PORT) then
 		pinfo.cols.info = "DAC Response"
 		local subtree = tree:add(etherdream_proto, buffer(), "EtherDream [DAC Response]")
-		
-		local dissect_status = true
-		
-		local dac_response = buffer(0,1):string()
-		subtree = subtree:add(response_field, buffer())
+		local bytesTaken = 0
 
-		subtree:add(responsecode_field, buffer(0,1))
-		subtree:add(responsecommand_field, buffer(1,1))
-		
-		if(dac_response == 'v') then
-			subtree:append_text(   " (Version Report)")
-			pinfo.cols.info:append(" (Version Report)")
-			subtree:add(dac_versionString_field, buffer(1,31) )
-		else 
-			pinfo.cols.info:append(response_infostring(buffer))
-			dissect_dacstatus(buffer(2,20), pinfo, subtree)
+		while bytesTaken < buffer:len() do
+			bytesTaken = bytesTaken + dissect_dacresponse(buffer(bytesTaken), pinfo, subtree)
 		end
 	end
 end -- end function citp_proto.dissector
@@ -424,7 +431,7 @@ end -- end function citp_proto.dissector
 udp_table = DissectorTable.get("udp.port")
 tcp_table = DissectorTable.get("tcp.port")
 
-register_postdissector(etherdream_proto)
+-- register_postdissector(etherdream_proto)
 
 udp_table:add(BCAST_PORT, etherdream_proto)
 tcp_table:add(STREAM_PORT, etherdream_proto)
