@@ -227,7 +227,11 @@ function dissect_command_write(buffer, pinfo, tree)
 	if dataSize ~= segDataSize then
 		subtree:add(command_write_remnantSize, dataSize - segDataSize)
 	end
-	subtree:add(command_write_data, buffer(3, segDataSize))
+	if segDataSize <= 0 then
+		subtree:append_text(" <no data>") -- TODO: Make this an expert warning?
+	else
+		subtree:add(command_write_data, buffer(3, segDataSize))
+	end
 	return 3 + segDataSize
 end 
 
